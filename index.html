@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ApeStore Fee Claimer — Base</title>
+<style>
+  :root{--bg:#0a0d12;--card:#12161d;--line:#232a35;--txt:#e7ecf3;--mut:#8b96a5;--acc:#2dd4bf;--warn:#fbbf24;--err:#f87171;--ok:#34d399}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,Arial}
+  .wrap{max-width:1200px;margin:0 auto;padding:24px}
+  h1{font-size:20px;margin:0 0 4px}
+  h2{font-size:15px;margin:0 0 8px}
+  .sub{color:var(--mut);margin:0 0 18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  label{display:block;font-weight:600;margin-bottom:6px}
+  textarea{width:100%;min-height:120px;background:#0d1117;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;resize:vertical}
+  button{background:var(--acc);color:#04231f;border:0;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer}
+  button.sec{background:#1c232e;color:var(--txt);border:1px solid var(--line)}
+  button.tiny{padding:3px 8px;font-size:11px;border-radius:6px}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .mut{color:var(--mut)}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600}
+  .tag{display:inline-block;padding:1px 7px;border-radius:999px;background:#1c232e;border:1px solid var(--line);font-size:11px}
+  .pill-ok{color:var(--ok)}.pill-err{color:var(--err)}.pill-warn{color:var(--warn)}.pill-free{color:var(--acc)}
+  .note{color:var(--mut);font-size:12px}
+  a{color:var(--acc)}
+  .hide{display:none}
+  .stat{display:flex;gap:18px;flex-wrap:wrap}
+  .stat b{font-size:18px}
+  .sect{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+  .addrline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:3px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ApeStore Fee Claimer — Base</h1>
+  <p class="sub">Scan creator addresses on <b>Base</b> → connect ANY wallet (pays gas only) → collect ApeStore pool fees. Fees always go to the token's creator, never to the caller.</p>
+
+  <div class="card">
+    <label>Wallet (pays gas)</label>
+    <div class="row">
+      <button id="connect">Connect wallet</button>
+      <span id="wstat" class="mut">not connected</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Creator addresses to scan (one per line)</label>
+    <textarea id="addrs" spellcheck="false" placeholder="0x0000000000000000000000000000000000000000"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="scan">Scan</button>
+      <button id="clear" class="sec">Clear</button>
+      <span id="sstat" class="mut"></span>
+    </div>
+    <p class="note" style="margin-bottom:0">
+      Sumber: <b>ApeStore</b> saja, chain <b>Base (8453)</b> saja.
+      ApeStore v2 (protocol 2) dan token di chain lain tidak ditampilkan.
+    </p>
+  </div>
+
+  <div id="rescard" class="card hide">
+    <div class="stat" style="margin-bottom:10px">
+      <div><div class="mut">Addresses</div><b id="naddr">0</b></div>
+      <div><div class="mut">Pernah launch</div><b id="nlaunch">0</b></div>
+      <div><div class="mut">Bisa klaim</div><b id="nclaim">0</b></div>
+      <div><div class="mut">Tidak ada launch</div><b id="nnolaunch">0</b></div>
+    </div>
+    <div class="row" style="margin:10px 0">
+      <button id="claimsel" disabled>Claim selected</button>
+      <button id="claimall" class="sec" disabled>Claim all claimable</button>
+      <span id="cstat" class="mut"></span>
+    </div>
+    <pre id="log" class="mono hide" style="white-space:pre-wrap;background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:200px;overflow:auto;font-size:11px;margin:0 0 12px"></pre>
+
+    <div id="secs"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<script>
+/* ================= config (Base only — snapshot of ape.store/api/config) ================= */
+const RAW = [
+ {"ID":8453,"Short":"base","Name":"Base","NativeToken":"ETH","PublicRpc":"https://mainnet.base.org","ScannerUrl":"https://basescan.org",
+  "ApeV30Routers":["0xb3bEa12AFC263318C16DC16DbFD5AB3A0261DABf","0xB1900F41d78D330A2a35C6771b3A6088a1b51309","0x1Fc310f1ca381D42A5D23d93394BE9aA6C3675dB"],
+  "ApeV300Routers":["0x402A795Fc6ab0063726709500B4597e0873736C8"],
+  "ApeV3Routers":["0x2D0d55E8d4418ce6157Cf31d9ffafB88117C0040"],
+  "ApeV4Routers":["0xd299cbec046bb4a419db3b98e1d134f271108040"]},
+];
+const CHAINS = Object.fromEntries(RAW.map(c=>[c.ID,c]));
+const BASE = 8453;
+const API = "/api";
+
+/* ================= ifaces ================= */
+const $ = s=>document.querySelector(s);
+const el = (t,c,txt)=>{const e=document.createElement(t); if(c)e.className=c; if(txt!=null)e.textContent=txt; return e;};
+const ROUTER_IFACE = new ethers.Interface(["function collectFees(address token)"]);
+
+let TOKENS = [], ADDRESSES = [], SCANFAIL = [], FAILCLAIM = [];
+let PROVIDER = null, ACCOUNT = null;
+
+const LOGLINES = [];
+function log(s){ LOGLINES.push(s); const p=$("#log"); p.classList.remove("hide"); p.textContent = LOGLINES.join("\n"); p.scrollTop = p.scrollHeight; }
+function errMsg(e){ const info = e && e.info && e.info.error; return (e && (e.shortMessage || (info && (info.message || info.data)) || e.message)) || String(e); }
+
+/* ================= wallet ================= */
+$("#connect").onclick = async ()=>{
+  if(!window.ethereum){ alert("No injected wallet (MetaMask / Rabby / Coinbase Wallet)."); return; }
+  try{
+    const accs = await window.ethereum.request({method:"eth_requestAccounts"});
+    PROVIDER = new ethers.BrowserProvider(window.ethereum);
+    ACCOUNT = accs[0];
+    const net = await PROVIDER.getNetwork();
+    $("#wstat").textContent = `${ACCOUNT.slice(0,6)}…${ACCOUNT.slice(-4)} · chain ${net.chainId}`;
+    refreshButtons();
+  }catch(e){ alert("Connect failed: "+(e.shortMessage||e.message)); }
+};
+if(window.ethereum){
+  window.ethereum.on && window.ethereum.on("accountsChanged", a=>{ ACCOUNT=a&&a[0]; $("#wstat").textContent = ACCOUNT?(ACCOUNT.slice(0,6)+"…"+ACCOUNT.slice(-4)):"not connected"; refreshButtons(); });
+}
+
+/* ================= scan ================= */
+$("#clear").onclick = ()=>{ $("#addrs").value=""; TOKENS=[]; SCANFAIL=[]; FAILCLAIM=[]; $("#rescard").classList.add("hide"); $("#log").classList.add("hide"); LOGLINES.length=0; };
+
+$("#scan").onclick = async ()=>{
+  const list = [...new Set($("#addrs").value.split(/[\s,;]+/).map(s=>s.trim()).filter(s=>/^0x[0-9a-fA-F]{40}$/.test(s)))];
+  if(!list.length){ alert("Masukkan minimal satu alamat 0x…"); return; }
+  ADDRESSES = list; TOKENS=[]; SCANFAIL=[]; FAILCLAIM=[]; LOGLINES.length=0;
+  $("#scan").disabled = true;
+  for(let i=0;i<list.length;i++){
+    $("#sstat").textContent = `scanning ${i+1}/${list.length}…`;
+    await scanApeStore(list[i]);
+  }
+  $("#sstat").textContent = "done"; $("#scan").disabled = false;
+  render();
+};
+
+/* ---- ApeStore (Base only) ---- */
+function apeRouterFor(t){
+  const c = CHAINS[t.chain]; if(!c) return null;
+  const p = Number(t.protocol);
+  if(p===2) return null;                                  // ApeStore v2 → skip (tidak bisa diklaim)
+  const arr = p===30 ? c.ApeV30Routers
+            : p===300 ? c.ApeV300Routers
+            : p===3  ? c.ApeV3Routers
+            : p===4  ? c.ApeV4Routers
+            : null;
+  if(!arr || !arr.length) return null;
+  const idx = Number(t.router||0);
+  return arr[idx] ?? arr[arr.length-1] ?? null;
+}
+const vlabel = p => p===30?"V3.0" : p===300?"V3.0.0" : p===3?"V3" : p===4?"V4" : ("V"+p);
+
+async function scanApeStore(addr){
+  try{
+    const r = await fetch(`${API}/user/${addr}`);
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const j = await r.json();
+    for(const t of (j.tokens||[])){
+      if(Number(t.chain)!==BASE) continue;                 // Base only
+      const router = apeRouterFor(t);
+      if(!router) continue;
+      TOKENS.push({ source:"apestore", sourceLabel:"ApeStore", perm:"free", state:"claimable", owner:addr,
+        chain:t.chain, token:t.address, symbol:t.symbol||"", target:router, kind:"router",
+        version: vlabel(Number(t.protocol)) });
+    }
+  }catch(e){ noteScanFail("apestore","ApeStore", addr, errMsg(e)); }
+}
+
+function noteScanFail(source, label, addr, err){
+  SCANFAIL.push({ source, sourceLabel:label, owner:addr, err:String(err).slice(0,200) });
+  log(`  ! gagal pindai ${label} ${addr}: ${String(err).slice(0,140)}`);
+}
+
+/* ================= render ================= */
+const PERM_BADGE = { free:'<span class="tag pill-free">wallet bebas</span>' };
+
+function render(){
+  const claimable = TOKENS.filter(t=>t.state==="claimable");
+  const launched = new Set(claimable.map(t=>t.owner.toLowerCase()));
+  const nolaunch = ADDRESSES.filter(a=>!launched.has(a.toLowerCase()));
+
+  $("#naddr").textContent = ADDRESSES.length;
+  $("#nlaunch").textContent = launched.size;
+  $("#nclaim").textContent = new Set(claimable.map(t=>t.owner.toLowerCase())).size;
+  $("#nnolaunch").textContent = nolaunch.length;
+
+  const root = $("#secs"); root.replaceChildren();
+
+  if(claimable.length) root.appendChild(section("Bisa klaim — ApeStore (Base)", claimable, true, "pill-ok", PERM_BADGE.free));
+  if(FAILCLAIM.length) root.appendChild(sectionList("Gagal klaim (tx revert) — bisa di-retry", FAILCLAIM, "pill-err"));
+  if(SCANFAIL.length) root.appendChild(sectionList("Gagal dipindai (RPC/API error) — bisa di-rescan", SCANFAIL, "pill-err"));
+  if(nolaunch.length) root.appendChild(sectionList("Tidak ada launch ApeStore di Base", nolaunch.map(a=>({owner:a})), "mut"));
+
+  $("#rescard").classList.remove("hide");
+  refreshButtons();
+}
+
+function section(title, rows, withCheckbox, cls, badgeHtml){
+  const box = el("div","sect");
+  const head = el("div","row");
+  head.appendChild(el("h2",null,`${title} — ${rows.length}`));
+  if(badgeHtml){ const b=el("span"); b.innerHTML=badgeHtml; head.appendChild(b); }
+  const copy = el("button","sec tiny",`Copy ${rows.length} alamat`);
+  copy.onclick = ()=>doCopy([...new Set(rows.map(r=>r.owner))].join("\n"), copy);
+  head.appendChild(copy);
+  box.appendChild(head);
+
+  const tb = el("table");
+  const trh = el("tr");
+  if(withCheckbox) trh.appendChild(el("th",null,""));
+  ["Alamat","Sumber","Token","Ver","Status",""].forEach(h=>trh.appendChild(el("th",null,h)));
+  const thead = el("thead"); thead.appendChild(trh); tb.appendChild(thead);
+  const tb2 = el("tbody");
+  rows.forEach(t=>{
+    const tr = el("tr");
+    if(withCheckbox){
+      const td = el("td"); const cb = el("input"); cb.type="checkbox"; cb.checked = true;
+      cb.dataset.row = TOKENS.indexOf(t); cb.onchange = refreshButtons; td.appendChild(cb); tr.appendChild(td);
+    }
+    tr.appendChild(el("td","mono",t.owner));
+    tr.appendChild(el("td",null,t.sourceLabel));
+    const tok = el("td","mono",(t.symbol? t.symbol+" · ":"")+(t.token||"").slice(0,10)+"…");
+    if(t.token){ const a=el("a",null,"↗"); a.href=(CHAINS[t.chain]?CHAINS[t.chain].ScannerUrl:"#")+"/address/"+t.token; a.target="_blank"; a.rel="noopener"; tok.append(document.createTextNode(" "),a); }
+    tr.appendChild(tok);
+    tr.appendChild(el("td","mono",t.version||"—"));
+    const st = el("td"); st.appendChild(el("span","tag "+cls, t.state==="claimable"?"bisa klaim":t.state));
+    tr.appendChild(st);
+    const act = el("td"); act.appendChild(copyBtn(t.owner)); tr.appendChild(act);
+    tb2.appendChild(tr);
+  });
+  tb.appendChild(tb2); box.appendChild(tb);
+  return box;
+}
+
+function sectionList(title, rows, cls){
+  const box = el("div","sect");
+  const head = el("div","row");
+  head.appendChild(el("h2",null,`${title} — ${rows.length}`));
+  const copy = el("button","sec tiny",`Copy ${rows.length} alamat`);
+  copy.onclick = ()=>doCopy([...new Set(rows.map(r=>r.owner))].join("\n"), copy);
+  head.appendChild(copy); box.appendChild(head);
+  for(const r of rows){
+    const line = el("div","addrline");
+    line.appendChild(el("span","mono",r.owner));
+    if(r.sourceLabel) line.appendChild(el("span","tag",r.sourceLabel));
+    if(r.err) line.appendChild(el("span","mut",r.err.slice(0,90)));
+    line.appendChild(copyBtn(r.owner));
+    box.appendChild(line);
+  }
+  return box;
+}
+
+async function doCopy(text, btn){
+  try{ await navigator.clipboard.writeText(text); const o=btn.textContent; btn.textContent="Copied ✓"; setTimeout(()=>btn.textContent=o,1400); }
+  catch(e){ alert("Copy gagal"); }
+}
+function copyBtn(text){ const b = el("button","sec tiny","Copy"); b.onclick = ()=>doCopy(text,b); return b; }
+function selectedRows(){ return [...document.querySelectorAll("#secs input[type=checkbox]:checked")].map(c=>TOKENS[Number(c.dataset.row)]).filter(Boolean); }
+function refreshButtons(){ const n=selectedRows().length; $("#claimsel").disabled = !(ACCOUNT && n); $("#claimall").disabled = !ACCOUNT; }
+function setStatus(row, txt, cls, detail){
+  const idx = TOKENS.indexOf(row); if(idx<0) return;
+  const cb = document.querySelector(`#secs input[data-row="${idx}"]`);
+  const tr = cb ? cb.closest("tr") : null;
+  if(!tr) return;
+  const td = tr.children[tr.children.length-1];
+  td.replaceChildren(el("span","tag "+(cls||""), txt));
+  if(detail && cls==="pill-err"){ const d=el("div","mut",detail.slice(0,100)); d.style.fontSize="10px"; td.appendChild(d); }
+}
+
+/* ================= claim (Base only) ================= */
+const chainParams = id => { const c=CHAINS[id]; return { chainId:"0x"+id.toString(16), chainName:c.Name, nativeCurrency:{name:c.NativeToken,symbol:c.NativeToken,decimals:18}, rpcUrls:[c.PublicRpc], blockExplorerUrls:[c.ScannerUrl] }; };
+async function ensureChain(id){
+  let provider = new ethers.BrowserProvider(window.ethereum);
+  let net = await provider.getNetwork();
+  if(Number(net.chainId)===id) return provider;
+  const hex="0x"+id.toString(16);
+  try{ await window.ethereum.request({method:"wallet_switchEthereumChain", params:[{chainId:hex}]}); }
+  catch(e){ if(e && (e.code===4902 || e.code===-32603)) await window.ethereum.request({method:"wallet_addEthereumChain", params:[chainParams(id)]}); else throw e; }
+  provider = new ethers.BrowserProvider(window.ethereum);
+  net = await provider.getNetwork();
+  if(Number(net.chainId)!==id) throw new Error(`wallet masih di chain ${net.chainId}`);
+  return provider;
+}
+
+$("#claimsel").onclick = ()=>runClaim(selectedRows());
+$("#claimall").onclick = ()=>runClaim(TOKENS.filter(t=>t.state==="claimable"));
+
+async function runClaim(rows){
+  if(!ACCOUNT){ alert("Connect wallet dulu."); return; }
+  if(!rows.length){ alert("Tidak ada yang dipilih."); return; }
+  if(rows.length>20 && !confirm(`Akan mengirim sekitar ${rows.length} transaksi. Lanjut?`)) return;
+  $("#claimsel").disabled = $("#claimall").disabled = true;
+  try{ $("#log").scrollIntoView({behavior:"smooth",block:"nearest"}); }catch(e){}
+
+  let ok=0, fail=0;
+  const c = CHAINS[BASE];
+  log(`\n— ${c.Name} (${BASE}) — ${rows.length} token`);
+  let provider;
+  try{ provider = await ensureChain(BASE); }
+  catch(e){ const m=errMsg(e); log(`  ✗ chain: ${m}`); rows.forEach(t=>{ fail++; FAILCLAIM.push({owner:t.owner, sourceLabel:t.sourceLabel, err:"chain: "+m}); setStatus(t,"chain error","pill-err",m); }); render(); return; }
+  const signer = await provider.getSigner();
+
+  for(const t of rows){
+    setStatus(t,"claiming…","pill-warn");
+    try{
+      const ctr = new ethers.Contract(t.target, ROUTER_IFACE, signer);
+      log(`  ApeStore ${t.symbol||""} ${t.token}  →  ${t.target}`);
+      const tx = await ctr.collectFees(t.token);
+      log(`    tx ${tx.hash}`);
+      await tx.wait();
+      setStatus(t,"claimed","pill-ok"); ok++;
+    }catch(e){
+      const m=errMsg(e); log(`    ✗ ${m}`);
+      FAILCLAIM.push({owner:t.owner, sourceLabel:t.sourceLabel, err:m});
+      setStatus(t,"failed","pill-err",m); fail++;
+    }
+  }
+  $("#cstat").textContent = `claimed ${ok} · failed ${fail}`;
+  $("#claimsel").disabled = $("#claimall").disabled = false;
+  render();
+}
+</script>
+</body>
+</html>
